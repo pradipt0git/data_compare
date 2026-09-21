@@ -1,0 +1,11 @@
+Account ID,Customer Name,Trade Date,Amount,Currency,Status,Notes,Region
+A-1001,  Acme Holdings  ,2025-01-15,15000,USD,Active,Standard settlement,North
+A-1002,Beacon Partners,2025-02-03,"1,250.50",USD,Active,Fee waived,North
+A-1003,Cedar Trust,2025-03-14,7800.00,CAD,,Quarterly rebalance,West
+A-1004,Delta Logistics,2025-04-02,3200,USD,Active,Reviewed by desk A,East
+A-1005,Everest Capital,2025-04-18,900,EUR,Pending,Awaiting confirmation,South
+A-1006,Foxglove LLC,2025-05-09,4550.25,USD,Closed,Left file only row,West
+A-1008,Harbour Group,2025-06-01,12000,GBP,Active,First duplicate occurrence,North
+A-1008,Harbour Group,2025-06-01,12000,GBP,Active,Second duplicate occurrence,North
+,Ironwood Co,2025-06-20,650,USD,Pending,Blank primary key row,East
+A-1010,Juniper Ltd,2025-07-07,2400,USD,Active,"Settled T+2, netted across books",South

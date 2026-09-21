@@ -1,0 +1,7 @@
+alpha first line
+beta SECOND line changed
+gamma third line
+delta fourth line
+eta fifth line replaced
+zeta sixth line
+theta seventh line added

@@ -1,0 +1,11 @@
+AccountID,Customer  Name,TradeDate,Amount,Currency,Status,Note_s,Branch
+A-1001,ACME HOLDINGS,2025-01-15,15000.000,usd,ACTIVE,Standard settlement,BR-01
+A-1002,Beacon Partners,2025-02-03,1250.5,USD,Active,Fee waived,BR-01
+A-1003,Cedar Trust,03/14/2025,7800,CAD,NULL,Quarterly rebalance,BR-04
+A-1004,Delta Logistics,2025-04-02,3200,USD,active,Reviewed by desk B,BR-02
+A-1005,Everest Capital,2025-04-18,950,EUR,Pending,Awaiting confirmation,BR-03
+A-1007,Gable Industries,2025-05-22,5100,USD,Active,Right file only row,BR-04
+A-1008,Harbour Group,2025-06-01,12000,GBP,Active,Single occurrence on the right,BR-01
+,Ironwood Co,2025-06-20,650,USD,Pending,Blank primary key row,BR-02
+,Kestrel Assets,2025-08-11,1800,USD,Active,Extra blank key occurrence,BR-03
+A-1010,Juniper Ltd,2025-07-07,2400,USD,Active,"Settled T+2, netted across books",BR-03

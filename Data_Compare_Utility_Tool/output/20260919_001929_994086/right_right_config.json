@@ -1,0 +1,1 @@
+{"owner":{"contact":"ops@example.com","team":"risk"},"retries":5,"endpoints":["alpha","gamma"],"service":"pricing","version":3,"timeout":30}

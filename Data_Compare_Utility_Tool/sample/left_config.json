@@ -1,0 +1,7 @@
+{
+  "service": "pricing",
+  "version": 3,
+  "retries": 2,
+  "endpoints": ["alpha", "beta"],
+  "owner": {"team": "risk", "contact": "ops@example.com"}
+}
