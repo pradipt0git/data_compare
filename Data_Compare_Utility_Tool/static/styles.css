@@ -41,7 +41,10 @@ body {
   background-repeat: no-repeat;
 }
 
-.shell { max-width: 1680px; margin: 0 auto; padding: 18px 20px 48px; }
+.shell {
+  max-width: 1680px; margin: 0 auto; padding: 18px 20px 20px;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
 
 /* ---------- header ---------- */
 .masthead {
@@ -408,6 +411,20 @@ th.side-col, td.side-col { width: 104px; max-width: 104px; }
 /* Without this a wide table keeps its column from shrinking and pushes the pair out
    of the results card; grid items default to min-width: auto. */
 .compare-pane { min-width: 0; }
+/* Let the table grow past the pane so wide files get a real horizontal scrollbar instead
+   of squeezing every column into the available width. Fixed column widths matter here:
+   both panes then have identical geometry, so a shared scroll position really does put
+   the same column on screen in each. */
+.compare-pane table.data { table-layout: fixed; width: max-content; min-width: 100%; }
+.compare-pane table.data th, .compare-pane table.data td { width: 170px; max-width: 170px; }
+.compare-pane table.data th.key-col, .compare-pane table.data td.key-col {
+  width: 46px; max-width: 46px; min-width: 46px;
+}
+/* needs to out-specify the 170px default above, or the jump column stretches */
+.compare-pane table.data th.jump-col, .compare-pane table.data td.jump-col {
+  width: 44px; max-width: 44px; min-width: 44px;
+}
+.compare-pane .table-wrap { overflow: auto; }
 .pane-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .pane-head h3 { margin: 0; font-size: 14px; white-space: nowrap; }
 .pane-head input[type=search] { flex: 1; min-width: 0; padding: 7px 10px; font-size: 13px; }
@@ -455,6 +472,46 @@ th.side-col, td.side-col { width: 104px; max-width: 104px; }
   padding: 12px; border-radius: 9px;
 }
 
+/* ---------- feedback bar ---------- */
+.footer-bar {
+  /* margin-top:auto drops it to the bottom of a short page; sticky keeps it in view
+     once the content is tall enough to scroll. */
+  margin-top: auto;
+  position: sticky; bottom: 0; z-index: 20;
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px solid rgba(255, 255, 255, .85); border-radius: var(--radius);
+  background: linear-gradient(120deg, rgba(240, 245, 253, .93), rgba(246, 241, 255, .88));
+  box-shadow: 0 -2px 18px rgba(29, 60, 104, .08);
+  backdrop-filter: blur(10px);
+}
+.footer-bar .footer-spacer { flex: 1; min-width: 0; }
+.footer-bar .usage { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.usage-item { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.usage-item strong {
+  color: var(--bmo-blue); font-size: 15px; font-weight: 700; margin-right: 4px;
+}
+
+.feedback-modal { max-width: 560px; }
+.feedback-modal h2 { margin: 0 0 4px; font-size: 20px; font-weight: 650; }
+.feedback-modal .hint { margin: 0 0 16px; color: var(--muted); }
+.feedback-modal .actions { margin-top: 16px; }
+/* the send action is an <a>, so it needs the button box styling explicitly */
+.btn-link {
+  font: inherit; border-radius: 9px; border: 1px solid transparent; cursor: pointer;
+  padding: 9px 16px; display: inline-flex; align-items: center; gap: 8px;
+  text-decoration: none;
+}
+.btn-link.is-disabled { opacity: .55; cursor: not-allowed; }
+
+
+textarea {
+  font: inherit; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 9px; background: #fff; color: var(--ink); width: 100%;
+  resize: vertical; min-height: 140px; line-height: 1.5;
+}
+textarea:focus { outline: 2px solid rgba(29, 95, 184, .25); outline-offset: 1px; }
+
 .summary-text { display: grid; gap: 8px; }
 .summary-text ul { margin: 0; padding-left: 20px; }
 .summary-text li { margin-bottom: 7px; line-height: 2; }
@@ -480,6 +537,7 @@ th.side-col, td.side-col { width: 104px; max-width: 104px; }
 .summary-text .stat.info { background: #e7e6fb; color: #423b91; }
 .summary-text .val-key { background: #eaf1fb; color: #24456f; font-weight: 700; }
 .summary-text .val-col { background: #f1f4f8; color: #35506f; font-weight: 650; }
+.summary-text .val-side { color: var(--muted); font-size: 12px; font-style: italic; }
 .summary-text .val-old {
   background: var(--red-soft); color: #8a1f2f;
   box-shadow: inset 0 0 0 1px var(--red-line);

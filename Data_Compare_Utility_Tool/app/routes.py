@@ -70,6 +70,21 @@ def _now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _bump(conn, name):
+    """Increment a running total, creating the counter the first time it is used."""
+    conn.execute(
+        "INSERT INTO analytics (name, count) VALUES (?, 1)"
+        " ON CONFLICT(name) DO UPDATE SET count = count + 1",
+        (name,),
+    )
+
+
+def _counts(conn):
+    rows = conn.execute("SELECT name, count FROM analytics").fetchall()
+    totals = {row["name"]: row["count"] for row in rows}
+    return {"opens": totals.get("opens", 0), "comparisons": totals.get("comparisons", 0)}
+
+
 def _loads(value, fallback):
     if not value:
         return fallback
@@ -411,6 +426,7 @@ def _execute_comparison(conn, row, operation_id, base_percent=40):
     summary["comparable_columns"] = validation["comparable_columns"]
     _touch(conn, execution_id, status="completed", current_step=7,
            summary_json=json.dumps(summary))
+    _bump(conn, "comparisons")
     return summary, validation, matches, rules
 
 
@@ -502,6 +518,81 @@ def create_basic_execution():
         "summary": summary,
         "current_step": 7,
     })
+
+
+# ---------------------------------------------------------------------------
+# Feedback and analytics
+# ---------------------------------------------------------------------------
+
+@api.post("/feedback")
+def submit_feedback():
+    """Keep every note, so none is lost if the mail client never sends it."""
+    body = request.get_json(silent=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "Write a message before sending."}), 400
+    category = (body.get("category") or "Feedback").strip()
+    with get_conn(_db_path()) as conn:
+        conn.execute(
+            "INSERT INTO feedback (created_at, category, message) VALUES (?, ?, ?)",
+            (_now(), category, message),
+        )
+    return jsonify({"stored": True})
+
+
+@api.get("/feedback/export")
+def export_feedback():
+    """Everything submitted between two dates, as a plain text file."""
+    start = (request.args.get("from") or "")[:10]
+    end = (request.args.get("to") or "")[:10]
+    if not start or not end:
+        return jsonify({"error": "Choose a from date and a to date."}), 400
+    if start > end:
+        return jsonify({"error": "The from date must not be after the to date."}), 400
+
+    with get_conn(_db_path()) as conn:
+        rows = conn.execute(
+            "SELECT created_at, category, message FROM feedback"
+            " WHERE created_at >= ? AND created_at <= ? ORDER BY created_at",
+            ("%sT00:00:00" % start, "%sT23:59:59" % end),
+        ).fetchall()
+
+    if not rows:
+        return jsonify({"error": "No feedback was recorded between those dates."}), 404
+
+    lines = [
+        "Data Compare Utility - feedback and suggestions",
+        "Covering %s to %s" % (start, end),
+        "%d entr%s" % (len(rows), "y" if len(rows) == 1 else "ies"),
+        "=" * 72,
+        "",
+    ]
+    for index, row in enumerate(rows, start=1):
+        lines.append("#%d  %s  [%s]" % (index, row["created_at"], row["category"] or "Feedback"))
+        lines.append("-" * 72)
+        lines.append(row["message"])
+        lines.append("")
+    text = "\r\n".join(lines)
+
+    return Response(
+        text,
+        mimetype="text/plain; charset=utf-8",
+        headers={"Content-Disposition":
+                 'attachment; filename="feedback_%s_to_%s.txt"' % (start, end)},
+    )
+
+
+@api.post("/analytics/open")
+def record_open():
+    with get_conn(_db_path()) as conn:
+        _bump(conn, "opens")
+        return jsonify(_counts(conn))
+
+
+@api.get("/analytics")
+def get_analytics():
+    with get_conn(_db_path()) as conn:
+        return jsonify(_counts(conn))
 
 
 # ---------------------------------------------------------------------------

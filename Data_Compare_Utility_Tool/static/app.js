@@ -4,10 +4,19 @@ const STEPS = ["Start", "Upload", "Select sheets", "Map columns", "Rules", "Vali
 
 const TABS = [
   {
+    id: "compare",
+    label: "Differences side by side",
+    blurb: "Only the rows that differ, shown with both files side by side and lined up row " +
+      "for row on the key, so you can read a record against its counterpart. Rows that match " +
+      "on every compared column are left out — those are in the Matching rows tab. Use the » " +
+      "button to jump straight to the first differing cell in a row; sorting, paging and " +
+      "scrolling move both tables at once.",
+  },
+  {
     id: "common",
-    label: "Common",
-    blurb: "Rows found in both files where every compared value already agrees once the " +
-      "normalisation rules are applied. Nothing here needs attention.",
+    label: "Matching rows",
+    blurb: "Rows that exist in both files and agree on every compared value once the " +
+      "normalisation rules are applied. Nothing here needs your attention.",
   },
   {
     id: "mismatch_first",
@@ -28,14 +37,6 @@ const TABS = [
     label: "Duplicates",
     blurb: "Keys that appear more than once inside a single file. Duplicates are reported " +
       "rather than compared, because a repeated key cannot be paired up reliably.",
-  },
-  {
-    id: "compare",
-    label: "Compare",
-    blurb: "Only the rows that differ, shown with both files side by side and lined up row " +
-      "for row on the key, so you can read a record against its counterpart. Rows that match " +
-      "on every compared column are left out — those are in the Common tab. Sorting and " +
-      "paging move both tables at once.",
   },
   {
     id: "summary",
@@ -138,6 +139,31 @@ function toCsv(rows) {
 
 function cellText(value) {
   return value === null || value === undefined ? "" : String(value);
+}
+
+function joinNames(names) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+}
+
+/* Plain-language reason a row was flagged. Mirrors describe_record in app/compare.py so
+   the screen, the CSV and the workbook all say the same thing. */
+function describeRecord(record) {
+  const side = record.side === "right" ? "right" : "left";
+  const other = side === "right" ? "left" : "right";
+  if (record.is_missing) {
+    return "This row is present in the " + side + " file but not in the " + other + " file.";
+  }
+  if (record.duplicate_count) {
+    return "This key appears " + record.duplicate_count + " times in the " + side + " file.";
+  }
+  const columns = record.mismatch_cols || [];
+  if (columns.length) {
+    return joinNames(columns) + (columns.length === 1 ? " does" : " do")
+      + " not match the " + other + " file.";
+  }
+  return "";
 }
 
 /* An aligned row is worth showing in the Compare tab only when something differs. */
@@ -428,9 +454,7 @@ function RecordTab({ tabId, records, columns, state, onState, executionId, onCel
     const body = sorted.map((record) => [record.key_norm]
       .concat(showSide ? [sideLabel(record.side)] : [])
       .concat(selected.map((column) => cellText(record.row[column])))
-      .concat([record.is_missing ? "Missing on the other side"
-        : record.duplicate_count ? "Duplicate key x" + record.duplicate_count
-        : (record.mismatch_cols || []).length ? "Differs: " + record.mismatch_cols.join(", ") : ""]));
+      .concat([describeRecord(record)]));
     saveBlob(new Blob([toCsv([header].concat(body))], { type: "text/csv" }),
       tabId + "_" + executionId + ".csv");
   };
@@ -513,9 +537,7 @@ function RecordTab({ tabId, records, columns, state, onState, executionId, onCel
                     );
                   })}
                   <td>
-                    {record.is_missing ? "Missing on the other side"
-                      : record.duplicate_count ? "Duplicate key x" + record.duplicate_count
-                      : mismatch.length ? "Differs: " + mismatch.join(", ") : ""}
+                    {describeRecord(record)}
                   </td>
                 </tr>
               );
@@ -523,7 +545,7 @@ function RecordTab({ tabId, records, columns, state, onState, executionId, onCel
             {pageRows.length === 0 ? (
               <tr>
                 <td colSpan={selected.length + (showJump ? 3 : 2) + (showSide ? 1 : 0)}>
-                  No rows for this tab.
+                  Nothing to show here — no rows fell into this category.
                 </td>
               </tr>
             ) : null}
@@ -555,7 +577,8 @@ function KeyPeek({ value }) {
   );
 }
 
-function CompareSide({ title, columns, labels, pageRows, side, onCell, query, onQuery }) {
+function CompareSide({ title, columns, labels, pageRows, side, onCell, query, onQuery,
+                      wrapRef, onScroll, cellRefs, onJump }) {
   return (
     <div className="compare-pane">
       <div className="pane-head">
@@ -563,21 +586,29 @@ function CompareSide({ title, columns, labels, pageRows, side, onCell, query, on
         <input type="search" placeholder={"Search the " + title.toLowerCase()}
           value={query} onChange={(event) => onQuery(event.target.value)} />
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" ref={wrapRef} onScroll={onScroll}>
         <table className="data">
           <thead>
             <tr>
+              <th className="jump-col" title="Go to the first difference in the row"></th>
               <th className="key-col" title="The key these two files are lined up on">Key</th>
               {columns.map((column) => <th key={column}>{labels[column] || column}</th>)}
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((row) => {
+            {pageRows.map((row, rowIndex) => {
               const payload = row[side];
               const missing = payload === null || payload === undefined;
               const mismatch = row.mismatch_cols || [];
               return (
                 <tr key={side + row.key_norm + "#" + row.occurrence}>
+                  <td className="jump-col">
+                    <button className="jump-btn" disabled={!mismatch.length}
+                      title={mismatch.length
+                        ? "Go to the first differing cell in this row"
+                        : "This row has no counterpart on the other side"}
+                      onClick={() => onJump(rowIndex, row)}>&raquo;</button>
+                  </td>
                   <td className="key-col">
                     <KeyPeek value={row.key_norm} />
                   </td>
@@ -589,6 +620,11 @@ function CompareSide({ title, columns, labels, pageRows, side, onCell, query, on
                     if (value.length > 50) classes.push("clickable");
                     return (
                       <td key={column} className={classes.join(" ")}
+                        ref={(element) => {
+                          const mapKey = side + "||" + rowIndex + "||" + column;
+                          if (element) cellRefs.current.set(mapKey, element);
+                          else cellRefs.current.delete(mapKey);
+                        }}
                         onClick={() => value.length > 50 && onCell(value)}>{value}</td>
                     );
                   })}
@@ -596,7 +632,7 @@ function CompareSide({ title, columns, labels, pageRows, side, onCell, query, on
               );
             })}
             {pageRows.length === 0 ? (
-              <tr><td colSpan={columns.length + 1}>No differing rows to display.</td></tr>
+              <tr><td colSpan={columns.length + 2}>No differing rows to display.</td></tr>
             ) : null}
           </tbody>
         </table>
@@ -607,6 +643,24 @@ function CompareSide({ title, columns, labels, pageRows, side, onCell, query, on
 
 function CompareTab({ rows, columns, labels, state, onState, executionId, onCell, onError }) {
   const [sortOpen, setSortOpen] = useState(false);
+  const leftWrap = useRef(null);
+  const rightWrap = useRef(null);
+  const mirroring = useRef(false);
+
+  /* Scrolling either table moves the other so paired rows and columns stay lined up.
+     The flag stops the mirrored scroll from bouncing straight back. */
+  const cellRefs = useRef(new Map());
+  const pendingJump = useRef(null);
+
+  const mirrorScroll = (fromRef, toRef) => {
+    const source = fromRef.current;
+    const target = toRef.current;
+    if (!source || !target || mirroring.current) return;
+    mirroring.current = true;
+    target.scrollLeft = source.scrollLeft;
+    target.scrollTop = source.scrollTop;
+    window.requestAnimationFrame(() => { mirroring.current = false; });
+  };
   // No fall-back to every column: clearing the picker must really show no columns.
   const active = (state.selectedColumns || columns).filter((name) => columns.includes(name));
 
@@ -676,6 +730,68 @@ function CompareTab({ rows, columns, labels, state, onState, executionId, onCell
         .concat(active.map((column) => (row.right ? cellText(row.right[column]) : ""))));
     saveBlob(new Blob([toCsv([header].concat(body))], { type: "text/csv" }),
       "compare_" + executionId + ".csv");
+  };
+
+  const flashPair = (rowIndex, column) => {
+    const left = cellRefs.current.get("left||" + rowIndex + "||" + column);
+    const right = cellRefs.current.get("right||" + rowIndex + "||" + column);
+    const anchor = left || right;
+    const wrap = left ? leftWrap.current : rightWrap.current;
+
+    if (anchor && wrap) {
+      // Both panes are moved directly and instantly. scrollIntoView's smooth animation
+      // cannot be used here: each pane mirrors the other, and the mirrored write
+      // interrupts the animation, leaving it stranded part way.
+      const cellBox = anchor.getBoundingClientRect();
+      const wrapBox = wrap.getBoundingClientRect();
+      const centred = wrap.scrollLeft + (cellBox.left - wrapBox.left)
+        - (wrap.clientWidth - cellBox.width) / 2;
+      const x = Math.max(0, Math.min(centred, wrap.scrollWidth - wrap.clientWidth));
+
+      let y = wrap.scrollTop;
+      const above = cellBox.top - wrapBox.top;
+      if (above < 0 || above + cellBox.height > wrap.clientHeight) {
+        y = Math.max(0, Math.min(wrap.scrollTop + above - wrap.clientHeight / 2,
+                                 wrap.scrollHeight - wrap.clientHeight));
+      }
+
+      mirroring.current = true;
+      [leftWrap.current, rightWrap.current].forEach((pane) => {
+        if (!pane) return;
+        pane.scrollLeft = x;
+        pane.scrollTop = y;
+      });
+      window.requestAnimationFrame(() => { mirroring.current = false; });
+    }
+
+    [left, right].forEach((cell) => {
+      if (!cell) return;
+      cell.classList.add("flash");
+      setTimeout(() => cell.classList.remove("flash"), 1400);
+    });
+  };
+
+  // A jump may first need a hidden column put back; finish it after that re-render.
+  useEffect(() => {
+    if (!pendingJump.current) return;
+    const { rowIndex, column } = pendingJump.current;
+    pendingJump.current = null;
+    flashPair(rowIndex, column);
+  });
+
+  const jumpToDifference = (rowIndex, row) => {
+    const mismatch = row.mismatch_cols || [];
+    if (!mismatch.length) return;
+    const visible = mismatch.find((column) => active.includes(column));
+    if (visible) {
+      flashPair(rowIndex, visible);
+      return;
+    }
+    onState({
+      selectedColumns: columns.filter(
+        (name) => active.includes(name) || name === mismatch[0]),
+    });
+    pendingJump.current = { rowIndex, column: mismatch[0] };
   };
 
   const sortBadge = dirty ? (
@@ -758,11 +874,17 @@ function CompareTab({ rows, columns, labels, state, onState, executionId, onCell
         <CompareSide title="Left file" columns={active} labels={{}}
           pageRows={pageRows} side="left" onCell={onCell}
           query={state.leftQuery}
-          onQuery={(value) => onState({ leftQuery: value, page: 1 })} />
+          onQuery={(value) => onState({ leftQuery: value, page: 1 })}
+          wrapRef={leftWrap}
+          onScroll={() => mirrorScroll(leftWrap, rightWrap)}
+          cellRefs={cellRefs} onJump={jumpToDifference} />
         <CompareSide title="Right file" columns={active} labels={labels}
           pageRows={pageRows} side="right" onCell={onCell}
           query={state.rightQuery}
-          onQuery={(value) => onState({ rightQuery: value, page: 1 })} />
+          onQuery={(value) => onState({ rightQuery: value, page: 1 })}
+          wrapRef={rightWrap}
+          onScroll={() => mirrorScroll(rightWrap, leftWrap)}
+          cellRefs={cellRefs} onJump={jumpToDifference} />
       </div>
 
       <Pager page={page} pages={pages} total={sorted.length}
@@ -837,13 +959,23 @@ function ChangeList({ pair, columns }) {
       {changed.map((column, position) => (
         <React.Fragment key={column}>
           {position > 0 ? "; " : ""}
-          <span className="val-col">{column}</span> changed from{" "}
+          <span className="val-col">{column}</span> is{" "}
           <span className="val-old">{cellText(pair.left.row[column]) || "(blank)"}</span>
-          {" "}to{" "}
+          <span className="val-side"> in the left file</span> but{" "}
           <span className="val-new">{cellText(pair.right.row[column]) || "(blank)"}</span>
+          <span className="val-side"> in the right file</span>
         </React.Fragment>
       ))}
       {changed.length === 0 ? "no column differs" : null}.
+    </React.Fragment>
+  );
+}
+
+/* Keeps the count inside its coloured chip while the wording around it agrees in number. */
+function Stat({ value, tone, one, many }) {
+  return (
+    <React.Fragment>
+      <span className={"stat " + tone}>{value}</span> {value === 1 ? one : many}
     </React.Fragment>
   );
 }
@@ -883,17 +1015,20 @@ function SummaryTab({ results, summary }) {
   return (
     <div className="summary-text">
       <p>
-        The comparison found{" "}
-        <span className="stat ok">{summary ? summary.common_count : 0}</span>{" "}
-        identical rows,{" "}
-        <span className="stat warn">{changes.length}</span>{" "}
-        changed rows,{" "}
-        <span className="stat bad">{removed.length}</span>{" "}
-        rows only in the left file,{" "}
-        <span className="stat bad">{added.length}</span>{" "}
-        rows only in the right file, and{" "}
-        <span className="stat info">{summary ? summary.duplicate_key_count : 0}</span>{" "}
-        duplicate keys.
+        Comparing the two files,{" "}
+        <Stat value={summary ? summary.common_count : 0} tone="ok"
+          one="row matches on every compared value"
+          many="rows match on every compared value" />,{" "}
+        <Stat value={changes.length} tone="warn"
+          one="row exists in both files but holds different values"
+          many="rows exist in both files but hold different values" />,{" "}
+        <Stat value={removed.length} tone="bad"
+          one="row is in the left file only" many="rows are in the left file only" />,{" "}
+        <Stat value={added.length} tone="bad"
+          one="row is in the right file only" many="rows are in the right file only" />, and{" "}
+        <Stat value={summary ? summary.duplicate_key_count : 0} tone="info"
+          one="key appears more than once within a single file"
+          many="keys appear more than once within a single file" />.
       </p>
 
       {paired.length ? (
@@ -904,22 +1039,25 @@ function SummaryTab({ results, summary }) {
         </p>
       ) : null}
 
-      <h3>Changed rows</h3>
+      <h3>Rows that exist in both files but hold different values</h3>
       <ul>
         {changes.slice(0, 200).map((pair, index) => (
           <li key={index}>
+            {"For the row where "}
             {pair.approximate ? (
               <span className="val-key">{rowLabel(pair.left, columns)}</span>
             ) : (
               <React.Fragment>
-                Key <span className="val-key">{pair.left.key_norm || "(blank)"}</span>
+                the key is <span className="val-key">{pair.left.key_norm || "(blank)"}</span>
               </React.Fragment>
             )}
             {": "}
             <ChangeList pair={pair} columns={columns} />
           </li>
         ))}
-        {changes.length === 0 ? <li>No changed rows were found.</li> : null}
+        {changes.length === 0 ? (
+          <li>No rows were found that exist in both files with differing values.</li>
+        ) : null}
       </ul>
       {changes.length > 200 ? (
         <p className="count">Showing the first 200 changed rows.</p>
@@ -927,11 +1065,13 @@ function SummaryTab({ results, summary }) {
 
       {removed.length ? (
         <React.Fragment>
-          <h3>Only in the left file</h3>
+          <h3>Rows found only in the left file</h3>
           <ul>
             {removed.slice(0, 100).map((record, index) => (
               <li key={index}>
+                {"The row where "}
                 <span className="val-old">{rowLabel(record, columns)}</span>
+                {" is in the left file, but there is no matching row in the right file."}
               </li>
             ))}
           </ul>
@@ -940,11 +1080,13 @@ function SummaryTab({ results, summary }) {
 
       {added.length ? (
         <React.Fragment>
-          <h3>Only in the right file</h3>
+          <h3>Rows found only in the right file</h3>
           <ul>
             {added.slice(0, 100).map((record, index) => (
               <li key={index}>
+                {"The row where "}
                 <span className="val-new">{rowLabel(record, columns)}</span>
+                {" is in the right file, but there is no matching row in the left file."}
               </li>
             ))}
           </ul>
@@ -1213,6 +1355,175 @@ function MapColumns({ pairs, setPairs, primaryKeys, setPrimaryKeys, busy, onSave
 }
 
 /* ------------------------------------------------------------------ */
+/* feedback                                                            */
+/* ------------------------------------------------------------------ */
+
+const FEEDBACK_EMAIL = "pradipta.7845@gmail.com";
+const FEEDBACK_CATEGORIES = ["Suggestion", "Bug or problem", "Question"];
+
+function FeedbackDialog({ onClose }) {
+  const [category, setCategory] = useState(FEEDBACK_CATEGORIES[0]);
+  const [message, setMessage] = useState("");
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (boxRef.current) boxRef.current.focus();
+    const onKey = (event) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // A real mailto link rather than a scripted navigation: the browser hands it to whatever
+  // mail client is registered, and right-click / copy-address still work.
+  const canSend = message.trim().length > 0;
+  const mailtoHref = "mailto:" + FEEDBACK_EMAIL
+    + "?subject=" + encodeURIComponent("[Data Compare Utility] " + category)
+    + "&body=" + encodeURIComponent(message + "\n\n---\nSent from the Data Compare Utility.");
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal feedback-modal" onClick={(event) => event.stopPropagation()}>
+        <h2>Tell us what you think</h2>
+        <p className="hint">
+          What worked well, what got in your way, or what you would like this tool to do next —
+          every note helps. <strong>Pradipta will receive your feedback</strong> and use it for
+          further changes and upgradations.
+        </p>
+
+        <label className="field">
+          What kind of feedback is this?
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            {FEEDBACK_CATEGORIES.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field" style={{ marginTop: 14 }}>
+          Your message
+          <textarea ref={boxRef} rows={8} value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Share your thoughts, ideas or anything that slowed you down…" />
+        </label>
+
+        <div className="actions">
+          <a className={"btn-link btn-primary" + (canSend ? "" : " is-disabled")}
+            href={canSend ? mailtoHref : undefined}
+            aria-disabled={!canSend}
+            onClick={(event) => {
+              if (!canSend) { event.preventDefault(); return; }
+              // Stored first so the note survives even if the mail is never sent.
+              api("/api/feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ category: category, message: message }),
+              }).catch(() => {});
+              onClose();
+            }}>
+            Send to Pradipta
+          </a>
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+        <p className="count" style={{ marginTop: 10 }}>
+          Your note is saved here as well, so it can be exported later even if your mail client
+          does not open.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function todayIso() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+}
+
+function ExportFeedbackDialog({ onClose }) {
+  const [from, setFrom] = useState(todayIso);
+  const [to, setTo] = useState(todayIso);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const download = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await apiBlob(
+        "/api/feedback/export?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to));
+      saveBlob(blob, "feedback_" + from + "_to_" + to + ".txt");
+      onClose();
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal feedback-modal" onClick={(event) => event.stopPropagation()}>
+        <h2>Export feedback</h2>
+        <p className="hint">
+          Download everything people have written over a period as a text file, then send that
+          file on by email.
+        </p>
+        <div className="field-grid">
+          <label className="field">
+            From date
+            <input type="date" value={from} max={to}
+              onChange={(event) => setFrom(event.target.value)} />
+          </label>
+          <label className="field">
+            To date
+            <input type="date" value={to} min={from}
+              onChange={(event) => setTo(event.target.value)} />
+          </label>
+        </div>
+        {error ? <p className="notice error" style={{ marginTop: 14 }}>{error}</p> : null}
+        <div className="actions">
+          <button className="btn-primary" disabled={busy} onClick={download}>
+            <Busy label={busy ? "Preparing…" : "Download .txt"} busy={busy} />
+          </button>
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeedbackBar({ counts, onOpen, onExport }) {
+  return (
+    <footer className="footer-bar">
+      <span className="usage">
+        <span className="usage-item">
+          <strong>{counts ? counts.opens : "—"}</strong>
+          {counts && counts.opens === 1 ? " time opened" : " times opened"}
+        </span>
+        <span className="usage-item">
+          <strong>{counts ? counts.comparisons : "—"}</strong>
+          {counts && counts.comparisons === 1 ? " comparison run" : " comparisons run"}
+        </span>
+      </span>
+      <span className="footer-spacer" />
+      <button className="btn-ghost btn-small" title="Export feedback for a date range"
+        onClick={onExport}>
+        <span aria-hidden="true">&#8681;</span> Export
+      </button>
+      <button className="btn-primary btn-small" onClick={onOpen}>
+        <span aria-hidden="true">&#9998;</span> Feedback &amp; suggest
+      </button>
+    </footer>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* app                                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -1233,11 +1544,14 @@ function App() {
   const [validation, setValidation] = useState(null);
   const [validationOpen, setValidationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [counts, setCounts] = useState(null);
   const [results, setResults] = useState(null);
   const [summary, setSummary] = useState(null);
   const [message, setMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState("common");
+  const [activeTab, setActiveTab] = useState("compare");
   const [tabState, setTabStateAll] = useState(() => {
     const initial = {};
     TABS.forEach((tab) => { initial[tab.id] = emptyTabState(); });
@@ -1261,6 +1575,17 @@ function App() {
   }, []);
 
   useEffect(() => { loadExecutions(); }, [loadExecutions]);
+
+  // One count per page load; the reply carries the fresh totals for the footer.
+  useEffect(() => {
+    api("/api/analytics/open", { method: "POST" })
+      .then(setCounts)
+      .catch(() => {});
+  }, []);
+
+  const refreshCounts = useCallback(() => {
+    api("/api/analytics").then(setCounts).catch(() => {});
+  }, []);
 
   const startProgress = (operationId) => {
     setProgress({ percent: 0, status: "Waiting to start" });
@@ -1287,7 +1612,7 @@ function App() {
     const fresh = {};
     TABS.forEach((tab) => { fresh[tab.id] = emptyTabState(); });
     setTabStateAll(fresh);
-    setActiveTab("common");
+    setActiveTab("compare");
   };
 
   const loadResults = async (id) => {
@@ -1329,6 +1654,7 @@ function App() {
       setStep(7);
       setMessage("Basic Compare completed. Review the results below.");
       loadExecutions();
+      refreshCounts();
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -1454,6 +1780,7 @@ function App() {
       setStep(7);
       setMessage("Comparison completed. Review the results below.");
       loadExecutions();
+      refreshCounts();
     } catch (error) {
       setErrorMessage(error.message);
       if (error.payload && error.payload.validation) {
@@ -1686,6 +2013,11 @@ function App() {
           activeTab={activeTab} setActiveTab={setActiveTab}
           tabState={tabState} setTabState={setTabState} onError={setErrorMessage} />
       ) : null}
+
+      <FeedbackBar counts={counts} onOpen={() => setFeedbackOpen(true)}
+        onExport={() => setExportOpen(true)} />
+      {feedbackOpen ? <FeedbackDialog onClose={() => setFeedbackOpen(false)} /> : null}
+      {exportOpen ? <ExportFeedbackDialog onClose={() => setExportOpen(false)} /> : null}
     </div>
   );
 }

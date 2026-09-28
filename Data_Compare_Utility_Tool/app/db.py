@@ -52,6 +52,21 @@ CREATE TABLE IF NOT EXISTS result_rows (
 
 CREATE INDEX IF NOT EXISTS idx_result_rows_exec_type
     ON result_rows (execution_id, result_type);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    category   TEXT,
+    message    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
+
+-- Running totals; one row per counter.
+CREATE TABLE IF NOT EXISTS analytics (
+    name  TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0
+);
 """
 
 

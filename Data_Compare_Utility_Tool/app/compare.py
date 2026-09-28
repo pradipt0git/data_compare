@@ -308,6 +308,34 @@ def matches_from_pairs(pairs):
     return matches
 
 
+def join_names(names):
+    """"a", "a and b", "a, b and c" - reads like a sentence rather than a list dump."""
+    names = list(names)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return "%s and %s" % (", ".join(names[:-1]), names[-1])
+
+
+def describe_record(record):
+    """Plain-language reason this row was flagged, phrased from the file it belongs to."""
+    side = "right" if record.get("side") == "right" else "left"
+    other = "left" if side == "right" else "right"
+
+    if record.get("is_missing"):
+        return ("This row is present in the %s file but not in the %s file."
+                % (side, other))
+    count = record.get("duplicate_count")
+    if count:
+        return "This key appears %d times in the %s file." % (count, side)
+    columns = record.get("mismatch_cols") or []
+    if columns:
+        return "%s %s not match the %s file." % (
+            join_names(columns), "does" if len(columns) == 1 else "do", other)
+    return ""
+
+
 def resolve_column_matches(matches):
     """Map names in both directions and list the comparable left columns."""
     right_name_by_left = {}
@@ -606,13 +634,7 @@ def _write_legacy_sheet(ws, columns, rows):
     for record in rows:
         payload = record["row"]
         mismatch_cols = record.get("mismatch_cols") or []
-        info = ""
-        if record.get("is_missing"):
-            info = "Missing on the other side"
-        elif record.get("duplicate_count"):
-            info = "Duplicate key x%d" % record["duplicate_count"]
-        elif mismatch_cols:
-            info = "Differs: %s" % ", ".join(mismatch_cols)
+        info = describe_record(record)
         ws.append([record.get("key_norm", "")] + [payload.get(c, "") for c in columns] + [info])
         written = ws[ws.max_row]
         for offset, column in enumerate(columns, start=1):
@@ -705,12 +727,6 @@ def results_to_csv(records, columns):
     writer.writerow(["Key"] + list(columns) + ["Info"])
     for record in records:
         payload = record["row"]
-        info = ""
-        if record.get("is_missing"):
-            info = "Missing on the other side"
-        elif record.get("duplicate_count"):
-            info = "Duplicate key x%d" % record["duplicate_count"]
-        elif record.get("mismatch_cols"):
-            info = "Differs: %s" % ", ".join(record["mismatch_cols"])
+        info = describe_record(record)
         writer.writerow([record.get("key_norm", "")] + [payload.get(c, "") for c in columns] + [info])
     return buffer.getvalue()
